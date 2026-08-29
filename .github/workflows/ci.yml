@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ash_supabase
+          POSTGRES_PASSWORD: ash_supabase
+          POSTGRES_DB: ash_supabase_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MIX_ENV: test
+      PGHOST: localhost
+      PGUSER: ash_supabase
+      PGPASSWORD: ash_supabase
+      PGDATABASE: ash_supabase_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "25.3"
+          elixir-version: "1.17.3"
+
+      - name: Create anon/authenticated/service_role roles
+        run: |
+          psql -h localhost -U ash_supabase -d ash_supabase_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+              CREATE ROLE service_role NOLOGIN BYPASSRLS;
+            END IF;
+          END
+          $$;
+          GRANT anon TO ash_supabase;
+          GRANT authenticated TO ash_supabase;
+          GRANT USAGE ON SCHEMA public TO anon, authenticated;
+          SQL
+
+      - name: Cache deps/build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+      - run: mix credo --strict
+      - name: Apply committed migrations (schema + RLS/Realtime policies)
+        run: mix ash_postgres.migrate
+
+      - name: Fail if resources drifted from the committed schema migrations
+        run: mix ash_postgres.generate_migrations --check
+
+      - name: Smoke-test the RLS/Realtime policy generator
+        run: mix ash_supabase.gen_policies --dry-run
+
+      - run: mix test
