@@ -34,7 +34,7 @@ defmodule AshSupabase.Test.Events.Event do
       # AshEvents replays by streaming this action in event order; keyset
       # pagination is what `Ash.Actions.Read.Stream` needs to be allowed
       # to do that.
-      pagination keyset?: true
+      pagination keyset?: true, required?: false
     end
 
     read :for_record do

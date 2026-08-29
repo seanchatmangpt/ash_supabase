@@ -107,8 +107,9 @@ defmodule MyApp.Events.Event do
   actions do
     read :read do
       primary? true
-      # AshEvents streams this action during replay -- it needs pagination.
-      pagination keyset?: true
+      # AshEvents streams this action during replay -- it needs pagination
+      # *allowed*, but not required for ordinary reads.
+      pagination keyset?: true, required?: false
     end
   end
 end
@@ -264,6 +265,79 @@ a new resource, or point-in-time debugging (`point_in_time:`/
 `last_event_id:` arguments; see the
 [AshEvents docs](https://hexdocs.pm/ash_events)).
 
+## Atomic multi-action processes without `Ash.Reactor`'s fixed step graph
+
+`Ash.Reactor`'s `transaction do ... end` block is the right tool when the
+shape of a process is static (a fixed number of named steps -- see
+`AshSupabase.Ledger.Transfer` below). When the shape is dynamic (a
+variable-length list of postings, a variable-length candidate walk over a
+federation graph), a plain function wrapping several Ash calls in one Ecto
+transaction is the better fit -- but doing that with raw
+`Repo.transaction/1` silently drops every Ash notification those calls
+produce (Ash logs "Missed N notifications" and moves on). `AshSupabase.Transaction.run/2`
+closes that gap, using Ash's own internal transaction-nesting contract, so
+the same "notification only after commit" guarantee holds either way:
+
+```elixir
+AshSupabase.Transaction.run(MyApp.Repo, fn ->
+  account
+  |> Ash.Changeset.for_update(:post_debit, %{amount_cents: 100})
+  |> Ash.update!()
+
+  MyApp.Receipts.Receipt.create!(%{...})
+end)
+```
+
+## Event/state replay equivalence
+
+`AshSupabase.Replay` is the generic, resource-agnostic half of "does
+replaying the event log alone reproduce the same live state": it hashes a
+loaded record's public attributes deterministically (`state_hash/2`) and
+compares two such hashes (`compare/2`). The "load, replay, reload"
+sequencing is the caller's -- see any of `test/chicago_test_14_replay_test.exs`,
+`test/chicago_test_17_deterministic_replay_test.exs`, or the crown scenario
+below for the pattern.
+
+## The ZOE LA Chicago proving ground
+
+`test/support` and every `test/chicago_test_*.exs` file are a from-scratch
+implementation of the [v26.8.29 PRD/ARD](https://ash-hq.org) doctrine this
+library exists to serve: Supabase as transport/projection only, Ash as
+sole authority, `Ash.Reactor` (or `AshSupabase.Transaction`, for
+dynamic-shaped processes) for deterministic execution, zero LLM in any
+production code path. It's a real church-operations domain -- identity,
+a double-entry financial ledger, a generic obligation grammar (Welcome,
+Infant Room, Escort/Coverage, Care, Recovery, Service-animal routing), and
+Kids capacity + cross-church federation -- built and tested against real
+Postgres, not mocked, per the doctrine's own "Chicago style" testing rule:
+never assert a function was called, always assert the actual resulting
+state.
+
+| # | Scenario | Test file |
+| --- | --- | --- |
+| 1 | Unauthorized user delete | `test/dual_table_test.exs` |
+| 2-4, 18-20 | Admin credit / unauthorized credit / unbalanced construction | `test/chicago_test_02_03_04_finance_test.exs` |
+| 5 | Welcome before security | `test/chicago_test_05_welcome_test.exs` |
+| 6 | Parent-with-infant routing | `test/chicago_test_06_infant_room_test.exs` |
+| 7 | Escort without losing Welcome coverage | `test/chicago_test_07_escort_test.exs` |
+| 8 | Service-animal routing | `test/chicago_test_08_service_animal_test.exs` |
+| 9 | Kids capacity deficit | `test/chicago_test_09_kids_capacity_test.exs` |
+| 10 | Federated Kids fulfillment | `test/chicago_test_10_kids_federation_test.exs` |
+| 11 | Care handoff | `test/chicago_test_11_care_test.exs` |
+| 12 | Recovery support routing | `test/chicago_test_12_recovery_test.exs` |
+| 13 | Notification only after commit | `test/chicago_test_13_notification_after_commit_test.exs` |
+| 14 | Event replay | `test/chicago_test_14_replay_test.exs` |
+| 15 | Supabase outage doctrine | `test/chicago_test_15_supabase_outage_test.exs` |
+| 16 | LLM blackout (standing release gate) | `test/chicago_test_16_llm_zero_test.exs` |
+| 17 | Deterministic replay | `test/chicago_test_17_deterministic_replay_test.exs` |
+| 46-47 | Crown scenario (Kids federation + Welcome + escort + a balanced credit, end to end) | `test/chicago_test_46_47_crown_test.exs` |
+
+One deliberate, stated scope boundary: this proving ground does not
+implement a dedicated "check a child in" resource -- the Kids capability
+built here is capacity/staffing and its federated fulfillment, not
+per-child check-in. The crown scenario says so explicitly rather than
+implying more than what's actually there.
+
 ## Developing this library
 
 ```
@@ -275,11 +349,12 @@ mix test
 ```
 
 The test suite (`test/support`) is itself a complete worked example --
-`Accounts.User`, `Events.Event`, `Todos.Todo` -- exercised against a real
+identity, receipts, the double-entry ledger, the generic obligation
+grammar, and Kids capacity + federation -- exercised against a real
 Postgres database, including RLS/Realtime grants (`test/sql_test.exs`),
 compile-time DSL enforcement (`test/resource_verifiers_test.exs`), the
-dual-table CRUD/replay flow (`test/dual_table_test.exs`), and JWT
-verification (`test/auth_test.exs`).
+dual-table CRUD/replay flow (`test/dual_table_test.exs`), JWT verification
+(`test/auth_test.exs`), and the full ZOE LA Chicago suite above.
 
 ## License
 

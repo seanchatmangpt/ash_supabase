@@ -18,7 +18,12 @@ defmodule AshSupabase.InfoTest do
     assert Info.rls_authenticated_select?(Todo) == false
   end
 
-  test "supabase_resources/1 finds Todo and only Todo across the test domain" do
-    assert Info.supabase_resources(:ash_supabase) == [Todo]
+  test "supabase_resources/1 finds every AshSupabase.Resource across the test domain" do
+    resources = Info.supabase_resources(:ash_supabase)
+
+    assert Todo in resources
+    refute Event in resources
+    refute AshSupabase.Test.Accounts.User in resources
+    assert Enum.all?(resources, &Info.supabase_resource?/1)
   end
 end

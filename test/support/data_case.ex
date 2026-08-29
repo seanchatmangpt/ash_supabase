@@ -26,13 +26,19 @@ defmodule AshSupabase.DataCase do
     :ok
   end
 
-  @doc "Insert (bypassing Ash -- this row exists outside the event-sourced flow) a test user/actor."
+  @doc "Insert a test user/actor via the real `User.create` Ash action."
   def create_user!(attrs \\ %{}) do
     id = Map.get(attrs, :id, Ash.UUID.generate())
     email = Map.get(attrs, :email, "user-#{id}@example.com")
+    role = Map.get(attrs, :role, "authenticated")
 
     AshSupabase.Test.Accounts.User
-    |> Ash.Changeset.for_create(:create, %{id: id, email: email})
+    |> Ash.Changeset.for_create(:create, %{id: id, email: email, role: role})
     |> Ash.create!()
+  end
+
+  @doc "Insert a test user/actor with role \"admin\" -- the actor Chicago tests use for privileged actions."
+  def create_admin!(attrs \\ %{}) do
+    create_user!(Map.put(attrs, :role, "admin"))
   end
 end

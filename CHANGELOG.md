@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased -- ZOE LA Chicago proving ground (v26.8.29 PRD/ARD)
+
+Implements the v26.8.29 PRD's corrected architecture end to end against a
+real church-operations domain: no LLM in production, Supabase is
+transport/projection only, Ash is authoritative, `Ash.Reactor` (plus
+`AshSupabase.Transaction` for dynamic-shaped processes) executes
+deterministic autonomics.
+
+- `AshSupabase.Ledger.Transfer` -- a real `Ash.Reactor`: verifies
+  `sum(debits) == sum(credits)` before opening any database transaction
+  (zero writes on an unbalanced construction), posts both legs plus a
+  receipt inside one `Ash.DataLayer.transaction/5` call, so an
+  unauthorized actor's policy refusal on either leg rolls the whole
+  transfer back.
+- `AshSupabase.Transaction` -- closes a real gap: wrapping several Ash
+  action calls in a raw `Repo.transaction/1` silently drops Ash's own
+  notifications. This holds them (via Ash's own
+  `:ash_started_transaction?`/`:ash_notifications` process-dictionary
+  contract) until the transaction actually commits, then dispatches them
+  -- the same "notification only after commit" guarantee `Ash.Reactor`
+  gets for free, given to plain deterministic processes whose step count
+  isn't known until runtime (a federation candidate walk, an arbitrary
+  posting list).
+- `AshSupabase.Replay` -- generic, resource-agnostic event/state replay
+  equivalence: `state_hash/2` hashes any Ash resource's public attributes
+  deterministically; `compare/2` says `:alive` or `{:drift, ...}`.
+- `AshSupabase.Test.Obligations.Obligation` -- the shared
+  Threshold→Signal→Classification→Owner→Obligation→Action→Receipt→NextState
+  grammar every Welcome, Infant Room, Escort, Care, and Recovery scenario
+  instantiates; no obligation this resource creates can silently
+  disappear -- every one reaches a closed, typed status.
+- `AshSupabase.Test.Kids.FulfillmentSolver` -- the architectural crown:
+  deterministically walks a closed, nearest-verified-first candidate
+  graph of partner churches to cover a local Kids-staffing deficit,
+  reserving capacity atomically or producing a receipted, typed
+  `BLOCKED:CAPABILITY_CAPACITY` refusal with zero partial reservations --
+  never "Kids disabled".
+- A complete worked ZOE LA "Chicago suite": 17 numbered PRD acceptance
+  tests plus the §46-47 crown scenario, all against real Postgres, no
+  mocks -- see the README's "ZOE LA Chicago proving ground" table for the
+  full test-file index.
+
 ## 0.1.0
 
 Initial release.
