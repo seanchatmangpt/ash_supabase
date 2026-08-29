@@ -22,7 +22,7 @@ defmodule AshSupabase do
        is written. Two tables, one write path -- a dual-table event
        sourcing pattern.
     3. Is required (enforced at compile time by `AshSupabase.Resource`,
-       see `AshSupabase.Verifiers.RequireEventSourcing`) to have that
+       see `AshSupabase.Transformers.RequireEventSourcing`) to have that
        wiring in place. A resource can't opt out of the event log while
        still calling itself an `AshSupabase.Resource`.
     4. Has Row Level Security locked down (see
@@ -37,11 +37,31 @@ defmodule AshSupabase do
   history you can audit or replay (`AshEvents`) to rebuild a table's
   state, migrate to a new projection, or debug what happened and why.
 
+  Locking PostgREST's writes down only answers half the question, though
+  -- "how do we stop a client writing around Ash." It says nothing about
+  how a client is supposed to write *at all*, given it still only speaks
+  the Supabase SDK it already knows, with zero awareness that Ash or
+  Elixir exist. `AshSupabase.Gateway` plus `mix
+  ash_supabase.export_ontology` (feeding `ggen_igniter`'s
+  ontology-to-code pipeline, see `priv/ggen/ash-supabase-client-pack`)
+  are that other half: a resource opts a subset of its actions into
+  `supabase do gateway_actions [...] end`, and gets back a real,
+  generated, typed TypeScript client (`createTodo(supabase, {...})`)
+  that a browser/mobile developer imports and calls exactly like any
+  other Supabase helper -- routed, behind one generic Edge Function
+  proxy, straight into the same Ash policy/action pipeline every other
+  path in this library already goes through.
+
   ## Where to look
 
     * `AshSupabase.Resource` -- the DSL extension resources use to opt in.
     * `AshSupabase.Info` -- introspection over resources using it.
     * `AshSupabase.Auth` -- turn a Supabase-issued JWT into an Ash actor.
+    * `AshSupabase.Gateway` -- the HTTP surface a Supabase-only client
+      (via a generated Edge Function) reaches for a write.
+    * `Mix.Tasks.AshSupabase.ExportOntology` -- projects gateway-exposed
+      actions into the ontology `mix ggen_igniter.sync` renders into a
+      typed TypeScript client (`mix ash_supabase.gen_client` runs both).
     * `Mix.Tasks.AshSupabase.GenPolicies` -- generate the RLS/Realtime SQL.
     * `Mix.Tasks.AshSupabase.Install` -- scaffold a new app onto this stack.
 

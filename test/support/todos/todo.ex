@@ -29,6 +29,13 @@ defmodule AshSupabase.Test.Todos.Todo do
     # commits them -- clients never write the table themselves.
     realtime?(true)
     expose_via_postgrest?(false)
+    # ...instead, a Supabase client writes through AshSupabase.Gateway
+    # (via the generated ash-gateway Edge Function), reaching these three
+    # actions as plain, typed local functions
+    # (createTodo/updateTodo/deleteTodo) -- see
+    # `mix ash_supabase.export_ontology` and
+    # `priv/ggen/ash-supabase-client-pack`.
+    gateway_actions([:create, :update, :destroy])
   end
 
   events do

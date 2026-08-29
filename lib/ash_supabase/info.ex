@@ -31,6 +31,22 @@ defmodule AshSupabase.Info do
   end
 
   @doc """
+  The action names on `resource` that `AshSupabase.Gateway` will accept
+  as `{resource, action, params}` dispatch targets, and that
+  `mix ash_supabase.export_ontology` emits a typed client function for.
+  Empty unless explicitly configured via `supabase do gateway_actions
+  [...] end`.
+  """
+  def gateway_actions(resource) do
+    Extension.get_opt(resource, [:supabase], :gateway_actions, [])
+  end
+
+  @doc "Whether `action` on `resource` is reachable through `AshSupabase.Gateway`."
+  def gateway_action?(resource, action) do
+    action in gateway_actions(resource)
+  end
+
+  @doc """
   All resources across `domains` that use `AshSupabase.Resource`.
 
   `domains` defaults to every domain configured for `otp_app` via
@@ -43,5 +59,17 @@ defmodule AshSupabase.Info do
     |> Enum.flat_map(&Ash.Domain.Info.resources/1)
     |> Enum.uniq()
     |> Enum.filter(&supabase_resource?/1)
+  end
+
+  @doc """
+  All resources across `domains` that expose at least one gateway
+  action -- i.e. that `AshSupabase.Gateway` and
+  `mix ash_supabase.export_ontology` will actually route to/generate a
+  client for. A strict subset of `supabase_resources/2`.
+  """
+  def gateway_resources(otp_app, domains \\ nil) do
+    otp_app
+    |> supabase_resources(domains)
+    |> Enum.filter(&(gateway_actions(&1) != []))
   end
 end

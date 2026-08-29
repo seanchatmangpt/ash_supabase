@@ -24,3 +24,8 @@ ash_supabase-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# ggen_igniter's local reconciliation manifest + per-run receipts --
+# regenerated fresh by `mix ash_supabase.gen_client`; absolute-path- and
+# timestamp-bearing, not meaningful to version.
+/.ggen_igniter/

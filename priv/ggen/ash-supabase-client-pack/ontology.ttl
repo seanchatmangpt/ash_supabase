@@ -1,0 +1,37 @@
+@prefix as: <https://hexdocs.pm/ash_supabase/ontology#> .
+
+as:action_todos_create a as:GatewayAction ;
+  as:resourceName "todos" ;
+  as:resourceModule "AshSupabase.Test.Todos.Todo" ;
+  as:actionName "create" ;
+  as:actionType "create" ;
+  as:tsFunctionName "createTodo" ;
+  as:tsReturnType "Todo" ;
+  as:paramsJson """[{"name":"title","required":true,"tsType":"string"},{"name":"user_id","required":true,"tsType":"string"}]""" .
+
+
+as:action_todos_update a as:GatewayAction ;
+  as:resourceName "todos" ;
+  as:resourceModule "AshSupabase.Test.Todos.Todo" ;
+  as:actionName "update" ;
+  as:actionType "update" ;
+  as:tsFunctionName "updateTodo" ;
+  as:tsReturnType "Todo" ;
+  as:paramsJson """[{"name":"id","required":true,"tsType":"string"},{"name":"title","required":true,"tsType":"string"},{"name":"completed","required":false,"tsType":"boolean"}]""" .
+
+
+as:action_todos_destroy a as:GatewayAction ;
+  as:resourceName "todos" ;
+  as:resourceModule "AshSupabase.Test.Todos.Todo" ;
+  as:actionName "destroy" ;
+  as:actionType "destroy" ;
+  as:tsFunctionName "deleteTodo" ;
+  as:tsReturnType "Todo" ;
+  as:paramsJson """[{"name":"id","required":true,"tsType":"string"}]""" .
+
+
+as:type_todos a as:ResourceType ;
+  as:resourceName "todos" ;
+  as:tsInterfaceName "Todo" ;
+  as:fieldsJson """[{"name":"id","required":true,"tsType":"string"},{"name":"title","required":true,"tsType":"string"},{"name":"completed","required":true,"tsType":"boolean"},{"name":"user_id","required":true,"tsType":"string"}]""" .
+

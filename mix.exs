@@ -52,10 +52,29 @@ defmodule AshSupabase.MixProject do
       # policies are satisfiable. Pure Elixir -- no NIF to compile.
       {:simple_sat, "~> 0.1"},
 
+      # Ontology -> SPARQL -> EEx -> write codegen pipeline, used to
+      # deterministically project every gateway-exposed Ash action into a
+      # typed TypeScript client (see AshSupabase.Gateway /
+      # mix ash_supabase.gen_client) -- the mechanism that lets a
+      # Supabase client call a plain, typed local function and never see
+      # Ash or Elixir at all.
+      {:ggen_igniter, "~> 26.8"},
+
       # -- Data + crypto --
       {:ecto_sql, "~> 3.14"},
       {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.4"},
+
+      # -- The client-facing gateway: the one HTTP surface a Supabase
+      # client (via a generated Edge Function) reaches for a write --
+      # everything downstream of it is Ash, never seen by the client.
+      {:plug, "~> 1.16"},
+      {:bandit, "~> 1.5"},
+      # Already pulled in unconditionally by :igniter -- declared here too
+      # (same unrestricted :only) so it can't silently disappear if that
+      # transitive path ever changes; used directly in this library's own
+      # gateway tests.
+      {:req, "~> 0.5"},
 
       # -- Dev / test only --
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
@@ -68,22 +87,27 @@ defmodule AshSupabase.MixProject do
     [
       "test.setup": ["ash_postgres.create", "ash_postgres.migrate"],
       "test.reset": ["ash_postgres.drop", "test.setup"],
-      test: ["test.setup", "test"]
+      test: ["test.setup", "test"],
+      "ash_supabase.gen_client": [
+        "ash_supabase.export_ontology",
+        "ggen_igniter.sync --pack ash-supabase-client-pack --out priv/generated/ash_supabase_client.ts"
+      ]
     ]
   end
 
   defp description do
     "Ash Framework integration for Supabase: routes every Supabase CRUD operation " <>
       "through Ash resources backed by a dual-table event-sourcing data layer " <>
-      "(AshPostgres projection table + AshEvents event log), plus RLS/Realtime " <>
-      "policy generation and Supabase Auth actor bridging."
+      "(AshPostgres projection table + AshEvents event log), an HTTP gateway plus " <>
+      "generated typed TypeScript client so browser/mobile clients only ever see " <>
+      "Supabase, plus RLS/Realtime policy generation and Supabase Auth actor bridging."
   end
 
   defp package do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv/ggen priv/supabase .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

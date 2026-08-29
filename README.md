@@ -148,6 +148,7 @@ defmodule MyApp.Todos.Todo do
   supabase do
     realtime? true            # keep Supabase Realtime clients live (default)
     expose_via_postgrest? false  # no direct PostgREST access at all (default)
+    gateway_actions [:create, :update, :destroy]  # reachable via AshSupabase.Gateway
   end
 
   events do
@@ -196,6 +197,118 @@ From this point on, `Ash.create!(MyApp.Todos.Todo, ...)` writes both the
 `todos` row and the matching `events` row, atomically, and Supabase's
 `anon`/`authenticated` Postgres roles cannot write to `todos` at all.
 
+## Clients only ever see Supabase
+
+Locking PostgREST's writes down (above) answers "how do we stop a client
+writing around Ash." It says nothing about how a client is supposed to
+write *at all* -- given it still only speaks the Supabase SDK it already
+knows, with zero awareness that Ash or Elixir exist. That's what
+`AshSupabase.Gateway` plus generated-client tooling
+([`ggen_igniter`](https://hex.pm/packages/ggen_igniter)) are for.
+
+```
+                 ┌─────────────────────────────┐
+  browser/mobile │  import { createTodo } from  │
+  TypeScript code│  "./ash_supabase_client";     │
+                 │  await createTodo(supabase,   │
+                 │    { title, user_id });       │
+                 └───────────────┬───────────────┘
+                                 │  supabase.functions.invoke("ash-gateway", {...})
+                                 ▼
+                 ┌─────────────────────────────┐
+                 │  supabase/functions/          │  <- the ONLY thing a client
+                 │  ash-gateway/index.ts (Deno)  │     ever talks to directly
+                 │  -- a static, generic proxy   │
+                 └───────────────┬───────────────┘
+                                 │  POST, forwarded verbatim (body + JWT)
+                                 ▼
+                 ┌─────────────────────────────┐
+                 │      AshSupabase.Gateway      │  <- Ash policies/actions
+                 │  {resource, action, params}   │     run here, same as any
+                 │  -> Ash.Changeset.for_*/Ash.*  │     other Ash entry point
+                 └─────────────────────────────┘
+```
+
+1. Opt a resource's actions in:
+
+   ```elixir
+   supabase do
+     gateway_actions [:create, :update, :destroy]
+   end
+   ```
+
+2. Mount `AshSupabase.Gateway` somewhere Ash can reach it (a Phoenix
+   route, or standalone via Bandit):
+
+   ```elixir
+   # router.ex
+   forward "/functions/v1/ash-gateway", to: AshSupabase.Gateway,
+     init_opts: [otp_app: :my_app, jwt_secret: {MyApp.Secrets, :jwt_secret, []}]
+   ```
+
+3. Generate the typed TypeScript client from your live Ash resources:
+
+   ```
+   mix ash_supabase.gen_client
+   ```
+
+   This runs `mix ash_supabase.export_ontology` (introspects every
+   `gateway_actions`-opted-in resource into an RDF ontology at
+   `priv/ggen/ash-supabase-client-pack/ontology.ttl` -- attribute names
+   and JSON-representable types only, no Ash/Elixir vocabulary) then
+   `mix ggen_igniter.sync --pack ash-supabase-client-pack`, which
+   deterministically projects that ontology into
+   `priv/generated/ash_supabase_client.ts`: one typed function and
+   params interface per gateway action, plus a return-type interface per
+   resource, e.g. (this exact output, for the `Todo` example above):
+
+   ```typescript
+   export interface Todo {
+     id: string;
+     title: string;
+     completed: boolean;
+     user_id: string;
+   }
+
+   export interface CreateTodoParams {
+     title: string;
+     user_id: string;
+   }
+
+   export async function createTodo(
+     supabase: SupabaseClient,
+     params: CreateTodoParams,
+   ): Promise<Todo> {
+     return invokeAshGateway<Todo>(supabase, "todos", "create", params);
+   }
+   ```
+
+   Re-run it whenever a gateway-exposed action's attributes/arguments
+   change -- the generated file always reflects the live resource, never
+   a hand-maintained copy that can drift.
+
+4. Copy `priv/supabase/functions/ash-gateway/index.ts` into your own
+   Supabase project's `supabase/functions/ash-gateway/index.ts` and
+   deploy it (`supabase functions deploy ash-gateway`), pointing
+   `ASH_GATEWAY_URL` at wherever you mounted `AshSupabase.Gateway`. It's
+   resource-agnostic -- a static proxy, never regenerated.
+
+From here, a frontend developer writes:
+
+```typescript
+import { createTodo } from "./ash_supabase_client";
+const todo = await createTodo(supabase, { title: "Buy milk", user_id: me.id });
+```
+
+and never sees Ash, Elixir, Reactor, or a single backend-framework term --
+`AshSupabase.Gateway` verifies the Supabase JWT
+(`AshSupabase.Auth.verify/3`), builds the Ash actor, and runs the exact
+same policy/action pipeline every other path into this library already
+goes through (see `AshSupabase.Gateway`'s moduledoc for the full request/
+response contract, including its `404`-not-`403` handling of a record the
+actor can't read -- matching Ash's own "never confirm existence" security
+convention).
+
 ## `supabase do ... end`
 
 | Option | Default | Meaning |
@@ -204,6 +317,7 @@ From this point on, `Ash.create!(MyApp.Todos.Todo, ...)` writes both the
 | `expose_via_postgrest?` | `false` | Grant the `anon` role (and, with `rls_authenticated_select?`, `authenticated`) a read-only RLS policy. Writes are **never** generated regardless of this flag. |
 | `postgrest_read_only?` | `true` | Documents that a direct-PostgREST grant, when enabled, is read-only. Writes always go through Ash. |
 | `rls_authenticated_select?` | `false` | Also grant `authenticated` (not just `anon`) the read-only policy. |
+| `gateway_actions` | `[]` | Action names reachable through `AshSupabase.Gateway` and generated into the typed TypeScript client (see "Clients only ever see Supabase" above). Empty by default -- opt in explicitly, same as `expose_via_postgrest?`. |
 
 ## `mix ash_supabase.gen_policies`
 
@@ -354,7 +468,12 @@ grammar, and Kids capacity + federation -- exercised against a real
 Postgres database, including RLS/Realtime grants (`test/sql_test.exs`),
 compile-time DSL enforcement (`test/resource_verifiers_test.exs`), the
 dual-table CRUD/replay flow (`test/dual_table_test.exs`), JWT verification
-(`test/auth_test.exs`), and the full ZOE LA Chicago suite above.
+(`test/auth_test.exs`), the full ZOE LA Chicago suite above, and the
+client-facing gateway end to end: `test/gateway_test.exs` (a real Bandit
+server, a real `Req` HTTP client, a real signed JWT), plus
+`test/export_ontology_test.exs`/`test/ggen_client_sync_test.exs` (the
+real `mix ash_supabase.export_ontology` + `mix ggen_igniter.sync`
+pipeline, checking the actual generated TypeScript).
 
 ## License
 

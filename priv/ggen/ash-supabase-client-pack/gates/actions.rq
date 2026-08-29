@@ -1,0 +1,14 @@
+PREFIX as: <https://hexdocs.pm/ash_supabase/ontology#>
+
+SELECT ?resource_name ?resource_module ?action_name ?action_type ?ts_function_name ?ts_return_type ?params_json
+WHERE {
+  ?action a as:GatewayAction ;
+    as:resourceName ?resource_name ;
+    as:resourceModule ?resource_module ;
+    as:actionName ?action_name ;
+    as:actionType ?action_type ;
+    as:tsFunctionName ?ts_function_name ;
+    as:tsReturnType ?ts_return_type ;
+    as:paramsJson ?params_json .
+}
+ORDER BY ?resource_name ?action_name

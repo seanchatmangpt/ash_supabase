@@ -51,6 +51,22 @@ defmodule AshSupabase.Resource do
         `authenticated` role (signed-in Supabase Auth users) in addition
         to `anon`. Ignored when `expose_via_postgrest?` is `false`.
         """
+      ],
+      gateway_actions: [
+        type: {:list, :atom},
+        default: [],
+        doc: """
+        Action names on this resource that `AshSupabase.Gateway` accepts
+        as `{resource, action, params}` dispatch targets, and that
+        `mix ash_supabase.export_ontology` (feeding
+        `priv/ggen/ash-supabase-client-pack`, rendered by
+        `mix ggen_igniter.sync`) emits a typed TypeScript client function
+        for. This is the whole point of the dual-table/RLS lockdown: a
+        write a Supabase client can actually make. Empty by default -- a
+        resource must opt in explicitly to being reachable by a client
+        that only knows Supabase, the same way `expose_via_postgrest?`
+        must be opted into for reads.
+        """
       ]
     ]
   }
@@ -100,6 +116,7 @@ defmodule AshSupabase.Resource do
     sections: [@supabase],
     transformers: [
       AshSupabase.Transformers.RequirePostgresDataLayer,
-      AshSupabase.Transformers.RequireEventSourcing
+      AshSupabase.Transformers.RequireEventSourcing,
+      AshSupabase.Transformers.RequireGatewayActionsExist
     ]
 end

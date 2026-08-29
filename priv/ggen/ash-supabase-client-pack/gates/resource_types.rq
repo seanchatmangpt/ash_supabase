@@ -1,0 +1,10 @@
+PREFIX as: <https://hexdocs.pm/ash_supabase/ontology#>
+
+SELECT ?resource_name ?ts_interface_name ?fields_json
+WHERE {
+  ?type a as:ResourceType ;
+    as:resourceName ?resource_name ;
+    as:tsInterfaceName ?ts_interface_name ;
+    as:fieldsJson ?fields_json .
+}
+ORDER BY ?resource_name

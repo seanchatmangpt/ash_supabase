@@ -1,5 +1,78 @@
 # Changelog
 
+## Unreleased -- clients only ever see Supabase
+
+Closes the gap in the previous entry below: locking PostgREST's writes
+down answered "how do we stop a client writing around Ash," but never
+answered "then how does a client write *at all*, given it still only
+speaks the Supabase SDK it already knows." This adds the other half.
+
+- `AshSupabase.Resource`'s `supabase do ... end` gains `gateway_actions`
+  -- the action names a resource opts into being reachable through the
+  gateway (enforced at compile time: naming an action the resource
+  doesn't have is a `Spark.Error.DslError`, same discipline as every
+  other `AshSupabase.Resource` guarantee).
+- `AshSupabase.Gateway` -- a `Plug.Router` implementing the one HTTP
+  contract a Supabase-only client (via a generated Edge Function) needs:
+  `POST /` with `{resource, action, params}` and a `Authorization:
+  Bearer <supabase-jwt>` header, verified with the same
+  `AshSupabase.Auth.verify/3` this library already shipped. Dispatches
+  `:create`/`:update`/`:destroy` through the resource's real Ash
+  actions/policies; maps Ash's error classes to HTTP status honestly,
+  including the `404`-not-`403` case for a record the actor can't read
+  (Ash's own "never confirm existence" convention, preserved rather than
+  papered over).
+- `mix ash_supabase.export_ontology` -- introspects every
+  `gateway_actions`-opted-in resource into an RDF/Turtle ontology
+  (attribute names and JSON-representable types only, no Ash/Elixir
+  vocabulary), the "closed model" a client is allowed to reach.
+- A real `ggen_igniter` pack (`priv/ggen/ash-supabase-client-pack`:
+  ontology, two SPARQL queries, one EEx template) that
+  `mix ggen_igniter.sync` (aliased as `mix ash_supabase.gen_client`,
+  which runs both steps) deterministically projects into a typed
+  TypeScript client -- one function + params interface per gateway
+  action, one return-type interface per resource, generated fresh from
+  the live domain every run, never hand-maintained.
+- `priv/supabase/functions/ash-gateway/index.ts` -- the one static, generic
+  Deno Edge Function every generated client function calls through;
+  never regenerated, since it is entirely resource-agnostic.
+
+Verified end to end, not just unit-tested in isolation:
+`test/gateway_test.exs` runs a real `Bandit` server and a real `Req` HTTP
+client against real Postgres with a real signed JWT (create, update,
+destroy, cross-actor refusal, expired/missing token, an unexposed real
+action correctly indistinguishable from a nonexistent one);
+`test/export_ontology_test.exs` and `test/ggen_client_sync_test.exs` run
+the real `mix ash_supabase.export_ontology` and real
+`mix ggen_igniter.sync` (real SPARQL, real oxigraph engine, real disk
+write) and check the actual generated Turtle/TypeScript content,
+including that the generated code itself never mentions Ash, Elixir, or
+Reactor.
+
+Two real bugs caught and fixed along the way, worth naming:
+
+- `Ash.get/3` for a record the caller can't read returns
+  `Ash.Error.Invalid` wrapping `Ash.Error.Query.NotFound` -- not
+  `Ash.Error.Forbidden` -- because Ash deliberately never confirms a
+  record you aren't allowed to see actually exists. The gateway's error
+  mapping now recurses into wrapped error lists to find that case and
+  returns `404`, not a naive `403` (or a worse-than-useless `422` from
+  the outer class alone).
+- `lib/ash_supabase/reactors/ledger_transfer.ex` referenced
+  `AshSupabase.Test.Ontology` (and, transitively, every other
+  `AshSupabase.Test.*` fixture the ZOE LA proving ground defines) from
+  inside `lib/` -- code that ships to every consumer of this package,
+  compiled in every environment. `test/support` is only on the compile
+  path for `MIX_ENV=test` (see `mix.exs`'s `elixirc_paths/1`), so `mix
+  compile` in `:dev`/`:prod` -- exactly what `mix ggen_igniter.sync`'s
+  own reconciliation step shells out, and exactly what a real downstream
+  consumer's `mix deps.compile` would do -- failed outright with
+  `UndefinedFunctionError`. `mix test` alone never caught this, because
+  `:test` env happens to compile `test/support` too. Moved the whole
+  module to `test/support/finance/transfer.ex`, where every one of its
+  actual dependencies already lives; `mix compile` in `:dev` is now
+  clean, which it was not before this fix.
+
 ## Unreleased -- ZOE LA Chicago proving ground (v26.8.29 PRD/ARD)
 
 Implements the v26.8.29 PRD's corrected architecture end to end against a
