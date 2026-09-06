@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  MIX_ENV: test
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.18.4"
+            otp: "27.3"
+            lint: true
+          - elixir: "1.17.3"
+            otp: "27.3"
+          - elixir: "1.16.3"
+            otp: "26.2"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Restore deps and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
+
+      - run: mix deps.get
+
+      - name: Check formatting
+        if: matrix.lint
+        run: mix format --check-formatted
+
+      - name: Check for unused dependencies
+        if: matrix.lint
+        run: mix deps.unlock --check-unused
+
+      - name: Compile without warnings
+        run: mix compile --warnings-as-errors
+
+      - name: Credo
+        if: matrix.lint
+        run: mix credo --strict
+
+      - name: Audit dependencies for known vulnerabilities
+        if: matrix.lint
+        run: mix deps.audit
+
+      - run: mix test
+
+  dialyzer:
+    name: Dialyzer
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          elixir-version: "1.18.4"
+          otp-version: "27.3"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-dialyzer-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-dialyzer-
+
+      - uses: actions/cache@v4
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-plt-
+
+      - run: mix deps.get
+      - run: mkdir -p priv/plts
+      - run: mix dialyzer --format github

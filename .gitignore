@@ -1,0 +1,13 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+ash_supabase-*.tar
+/priv/plts/
+.elixir_ls/
+.lexical/
+/tmp/
+.DS_Store
