@@ -210,8 +210,6 @@ if Code.ensure_loaded?(Plug.Conn) do
     defp claim(claims, key) when is_map(claims),
       do: Map.get(claims, Atom.to_string(key), Map.get(claims, key))
 
-    defp claim(_claims, _key), do: nil
-
     # GoTrue sends "" rather than omitting an unset email or phone.
     defp presence(""), do: nil
     defp presence(value), do: value

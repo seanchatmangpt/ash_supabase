@@ -312,14 +312,9 @@ defmodule AshSupabase.Client do
     Enum.map(headers, fn {key, value} -> {String.downcase(to_string(key)), to_string(value)} end)
   end
 
+  # Req normalizes response headers to `%{downcased_name => [value]}` before we
+  # ever see them, so there is nothing left to do here.
   defp normalize_headers(headers) when is_map(headers), do: headers
-
-  defp normalize_headers(headers) when is_list(headers) do
-    Enum.reduce(headers, %{}, fn {key, value}, acc ->
-      key = String.downcase(to_string(key))
-      Map.update(acc, key, List.wrap(value), &(&1 ++ List.wrap(value)))
-    end)
-  end
 
   defp put_params(req_options, nil), do: req_options
   defp put_params(req_options, []), do: req_options

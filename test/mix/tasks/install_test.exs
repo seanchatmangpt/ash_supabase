@@ -11,6 +11,25 @@ defmodule Mix.Tasks.AshSupabase.InstallTest do
 
   import Igniter.Test
 
+  # `apply_igniter!/1` evaluates the project's generated config, so running the
+  # installer writes its `config :spark, formatter: ...` (and the generated
+  # client's runtime config) into the REAL application environment of the test
+  # run. Left in place, that makes `Spark.Formatter` reorder sections in files
+  # formatted by later tests, and the idempotency assertions fail depending on
+  # the order ExUnit happens to pick. Snapshot and restore around every test.
+  setup do
+    snapshots = Enum.map([:spark, :test], &{&1, Application.get_all_env(&1)})
+
+    on_exit(fn ->
+      Enum.each(snapshots, fn {app, env} ->
+        for {key, _} <- Application.get_all_env(app), do: Application.delete_env(app, key)
+        for {key, value} <- env, do: Application.put_env(app, key, value)
+      end)
+    end)
+
+    :ok
+  end
+
   doctest Mix.Tasks.AshSupabase.Gen.Resource
 
   describe "mix ash_supabase.install" do

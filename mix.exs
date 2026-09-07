@@ -35,6 +35,7 @@ defmodule AshSupabase.MixProject do
       dialyzer: [
         plt_add_apps: [:mix, :ex_unit, :plug, :ash_postgres],
         plt_local_path: "priv/plts",
+        ignore_warnings: ".dialyzer_ignore.exs",
         plt_core_path: "priv/plts",
         flags: [:unmatched_returns, :error_handling, :extra_return]
       ]

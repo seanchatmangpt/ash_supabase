@@ -200,6 +200,66 @@ defmodule AshSupabase.PostgREST.FilterTest do
     end
   end
 
+  describe "constant folding" do
+    # `title in []` can never match. Under `and` that makes the whole
+    # expression impossible; under `or` it must simply disappear, leaving the
+    # other branch. Collapsing the `or` case would skip the request entirely
+    # and return no rows for a query that should return some.
+    setup do
+      impossible = %Ash.Query.Operator.In{
+        left: %Ash.Query.Ref{attribute: :title, relationship_path: []},
+        right: []
+      }
+
+      possible = %Ash.Query.Operator.Eq{
+        left: %Ash.Query.Ref{attribute: :body, relationship_path: []},
+        right: "x"
+      }
+
+      {:ok, impossible: impossible, possible: possible}
+    end
+
+    test "an impossible branch absorbs an `and`", ctx do
+      expression = %Ash.Query.BooleanExpression{
+        op: :and,
+        left: ctx.impossible,
+        right: ctx.possible
+      }
+
+      assert {:ok, :impossible} = Filter.to_params(expression, Post)
+    end
+
+    test "an impossible branch vanishes from an `or`", ctx do
+      expression = %Ash.Query.BooleanExpression{
+        op: :or,
+        left: ctx.impossible,
+        right: ctx.possible
+      }
+
+      assert {:ok, [{"body", "eq.x"}]} = Filter.to_params(expression, Post)
+    end
+
+    test "an impossible branch vanishes from an `or` on either side", ctx do
+      expression = %Ash.Query.BooleanExpression{
+        op: :or,
+        left: ctx.possible,
+        right: ctx.impossible
+      }
+
+      assert {:ok, [{"body", "eq.x"}]} = Filter.to_params(expression, Post)
+    end
+
+    test "an `or` of two impossible branches is still impossible", ctx do
+      expression = %Ash.Query.BooleanExpression{
+        op: :or,
+        left: ctx.impossible,
+        right: ctx.impossible
+      }
+
+      assert {:ok, :impossible} = Filter.to_params(expression, Post)
+    end
+  end
+
   describe "trivial filters" do
     test "no filter means no parameters" do
       assert {:ok, :none} = Filter.to_params(nil, Post)

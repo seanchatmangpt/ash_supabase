@@ -73,9 +73,12 @@ defmodule AshSupabase.Auth.JWKS do
 
   @impl GenServer
   def init(_opts) do
-    if :ets.whereis(@table) == :undefined do
-      :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
-    end
+    # The table is named and public, so the reference is not needed; the table
+    # is reached by name from whichever process is doing the lookup.
+    _ =
+      if :ets.whereis(@table) == :undefined do
+        :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
+      end
 
     {:ok, %{}}
   end

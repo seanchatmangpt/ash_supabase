@@ -259,7 +259,10 @@ defmodule AshSupabase.PostgREST.Filter do
 
   # -- helpers --------------------------------------------------------------
 
-  defp combine(_op, :always_false, _right), do: :always_false
+  # Constant folding. Note that a constant absorbs under one operator and
+  # vanishes under the other, so these clauses must stay operator-specific: a
+  # catch-all on `:always_false` would turn `false or x` into `false`.
+  defp combine(:and, :always_false, _right), do: :always_false
   defp combine(:and, _left, :always_false), do: :always_false
   defp combine(:and, :always_true, right), do: right
   defp combine(:and, left, :always_true), do: left

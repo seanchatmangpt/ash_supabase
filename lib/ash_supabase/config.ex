@@ -146,8 +146,7 @@ defmodule AshSupabase.Config do
   defp validate(opts) do
     case Spark.Options.validate(opts, @schema) do
       {:ok, opts} -> {:ok, opts}
-      {:error, %{__exception__: true} = error} -> {:error, Exception.message(error)}
-      {:error, error} -> {:error, inspect(error)}
+      {:error, error} -> {:error, Exception.message(error)}
     end
   end
 
