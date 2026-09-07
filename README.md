@@ -2,7 +2,7 @@
 
 [![Hex.pm](https://img.shields.io/hexpm/v/ash_supabase.svg)](https://hex.pm/packages/ash_supabase)
 [![Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ash_supabase)
-[![License](https://img.shields.io/hexpm/l/ash_supabase.svg)](LICENSE)
+[![License](https://img.shields.io/hexpm/l/ash_supabase.svg)](https://github.com/seanchatmangpt/ash_supabase/blob/main/LICENSE)
 
 Supabase integration for the [Ash Framework](https://ash-hq.org).
 
@@ -142,4 +142,4 @@ request and response — that is the fastest path to a fix.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/seanchatmangpt/ash_supabase/blob/main/LICENSE).

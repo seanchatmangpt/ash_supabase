@@ -22,7 +22,7 @@ defmodule AshSupabase.PostgREST.Filter do
 
   Anything with no faithful PostgREST equivalent returns
   `{:error, %AshSupabase.Error.Unsupported{}}` rather than an approximation.
-  `AshSupabase.DataLayer.can?/2` reports the same set, so Ash will not normally
+  `c:Ash.DataLayer.can?/2` reports the same set, so Ash will not normally
   send one. See the [data layer guide](data-layer.md#filter-support).
   """
 
@@ -374,7 +374,7 @@ defmodule AshSupabase.PostgREST.Filter do
   @doc """
   The filter expression structs this module can translate.
 
-  `AshSupabase.DataLayer.can?/2` uses this to answer `{:filter_expr, struct}`,
+  `c:Ash.DataLayer.can?/2` uses this to answer `{:filter_expr, struct}`,
   so Ash knows up front which expressions it can push down.
   """
   @spec supported_expressions() :: [module()]
