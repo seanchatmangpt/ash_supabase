@@ -306,7 +306,11 @@ defmodule AshSupabase.Realtime.Socket do
          {:ok, conn} <- Mint.WebSocket.stream_request_body(state.conn, state.request_ref, data) do
       %{state | websocket: websocket, conn: conn}
     else
-      {:error, %Mint.WebSocket{} = websocket, reason} ->
+      # `is_struct/2` rather than a `%Mint.WebSocket{}` pattern: a struct
+      # pattern is expanded at compile time, which would make this module — and
+      # so the whole library — fail to compile when the optional
+      # `:mint_web_socket` dependency is absent.
+      {:error, websocket, reason} when is_struct(websocket, Mint.WebSocket) ->
         reconnect(%{state | websocket: websocket}, reason)
 
       {:error, conn, reason} ->

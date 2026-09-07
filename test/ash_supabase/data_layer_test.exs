@@ -270,6 +270,51 @@ defmodule AshSupabase.DataLayerTest do
 
       assert header(capture.(), "accept-profile") == "tenant_a"
     end
+
+    # Writes carry their tenant on the changeset rather than on a query, so it
+    # has to be read from there. Missing it writes to the wrong schema, which is
+    # a cross-tenant data leak rather than an error.
+    test "context multitenancy applies to creates" do
+      capture = expect_request(&Req.Test.json(&1, %{"id" => @id, "name" => "x"}))
+
+      Tenanted
+      |> Ash.Changeset.for_create(:create, %{name: "x"}, tenant: "tenant_a")
+      |> Ash.create!()
+
+      assert header(capture.(), "content-profile") == "tenant_a"
+    end
+
+    test "context multitenancy applies to updates and destroys" do
+      read = expect_request(&Req.Test.json(&1, [%{"id" => @id, "name" => "x"}]))
+
+      [record] =
+        Tenanted
+        |> Ash.Query.set_tenant("tenant_a")
+        |> Ash.read!()
+
+      read.()
+
+      capture = expect_request(&Req.Test.json(&1, %{"id" => @id, "name" => "y"}))
+      Ash.update!(record, %{name: "y"}, tenant: "tenant_a")
+      assert header(capture.(), "content-profile") == "tenant_a"
+
+      capture = expect_request(&Plug.Conn.send_resp(&1, 204, ""))
+      Ash.destroy!(record, tenant: "tenant_a")
+      assert header(capture.(), "content-profile") == "tenant_a"
+    end
+  end
+
+  describe "counting an impossible query" do
+    test "does not issue a request for a filter that can never match" do
+      Req.Test.stub(AshSupabase.Test.Client, fn _conn ->
+        flunk("counting an impossible query should not reach the network")
+      end)
+
+      assert {:ok, 0} =
+               Post
+               |> Ash.Query.filter(title in [])
+               |> Ash.count()
+    end
   end
 
   describe "errors" do

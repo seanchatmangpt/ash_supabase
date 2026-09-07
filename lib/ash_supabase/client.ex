@@ -286,17 +286,24 @@ defmodule AshSupabase.Client do
     |> Enum.any?(&String.contains?(&1, "json"))
   end
 
+  # `apikey`, `authorization` and the profile header are computed from the
+  # config and the per-request options, so they are applied last and win. A
+  # stale `authorization` in a client's `:headers` silently defeating a
+  # per-request `:token` would run the request as the wrong user.
+  @reserved_headers ~w(apikey authorization accept-profile content-profile)
+
   defp headers(config, method, opts) do
-    base = [
+    computed = [
       {"apikey", config.api_key},
       {"authorization", "Bearer " <> config.access_token},
       {profile_header(method), Keyword.get(opts, :schema) || config.schema}
     ]
 
-    base
-    |> Kernel.++(config.headers)
+    config.headers
     |> Kernel.++(normalize_request_headers(Keyword.get(opts, :headers, [])))
-    # Later entries win, matching the "per-request overrides client" expectation.
+    |> Enum.reject(fn {key, _value} -> key in @reserved_headers end)
+    |> Kernel.++(computed)
+    # Later entries win, so a per-request header overrides a configured one.
     |> Enum.reduce(%{}, fn {key, value}, acc -> Map.put(acc, String.downcase(key), value) end)
     |> Enum.to_list()
   end

@@ -71,6 +71,38 @@ jobs:
 
       - run: mix test
 
+  without-optional-deps:
+    name: Compiles without optional dependencies
+    runs-on: ubuntu-latest
+
+    # `:plug`, `:ash_postgres`, `:igniter` and `:mint_web_socket` are optional.
+    # A struct pattern or a bare module reference outside a `Code.ensure_loaded?`
+    # guard breaks every downstream app that does not have them, and nothing in
+    # the normal test run would notice, because they are all installed there.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18.4"
+          otp-version: "27.3"
+
+      - name: Build a consumer project that depends only on ash_supabase
+        run: |
+          mkdir -p /tmp/consumer/lib
+          cd /tmp/consumer
+          cat > mix.exs <<'EOF'
+          defmodule Consumer.MixProject do
+            use Mix.Project
+            def project, do: [app: :consumer, version: "0.1.0", elixir: "~> 1.15", deps: deps()]
+            def application, do: [extra_applications: [:logger]]
+            defp deps, do: [{:ash_supabase, path: "${{ github.workspace }}"}]
+          end
+          EOF
+          echo 'defmodule Consumer do end' > lib/consumer.ex
+          mix deps.get
+          mix compile --warnings-as-errors
+
   dialyzer:
     name: Dialyzer
     runs-on: ubuntu-latest

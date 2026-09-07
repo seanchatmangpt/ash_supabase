@@ -193,6 +193,7 @@ defmodule AshSupabase.DataLayer do
   def can?(_, :async_engine), do: true
   def can?(_, {:query_aggregate, :count}), do: true
   def can?(_, {:aggregate, :count}), do: true
+  def can?(_, :changeset_filter), do: true
   # Ash asks this before building any comparison whose operand is a reference,
   # which is to say before building almost any filter at all.
   def can?(_, :nested_expressions), do: true
@@ -309,6 +310,8 @@ defmodule AshSupabase.DataLayer do
     end)
   end
 
+  defp run_aggregate(%Query{impossible?: true}, %{kind: :count}, _resource), do: {:ok, 0}
+
   defp run_aggregate(query, %{kind: :count} = aggregate, resource) do
     client = Info.client(resource)
 
@@ -366,7 +369,7 @@ defmodule AshSupabase.DataLayer do
     with {:ok, attributes} <- dump_changes(changeset, resource) do
       query =
         resource
-        |> base_write_query()
+        |> base_write_query(changeset)
         |> Query.single()
 
       case PostgREST.insert(Info.client(resource), query, attributes, changeset_opts(changeset)) do
@@ -391,7 +394,7 @@ defmodule AshSupabase.DataLayer do
 
       query =
         resource
-        |> base_write_query()
+        |> base_write_query(changeset)
         |> Query.upsert(conflict_columns, :merge_duplicates)
         |> Query.single()
 
@@ -409,7 +412,7 @@ defmodule AshSupabase.DataLayer do
     with {:ok, rows} <- dump_all(changesets, resource) do
       query =
         resource
-        |> base_write_query()
+        |> base_write_query(List.first(changesets))
         |> Query.returning(Map.get(options, :return_records?, false))
 
       query =
@@ -441,7 +444,7 @@ defmodule AshSupabase.DataLayer do
   def update(resource, changeset) do
     with :ok <- reject_atomics(changeset, resource),
          {:ok, attributes} <- dump_changes(changeset, resource),
-         {:ok, query} <- record_query(resource, changeset.data),
+         {:ok, query} <- record_query(resource, changeset.data, changeset),
          {:ok, query} <- apply_changeset_filter(query, changeset, resource) do
       query = Query.single(query)
 
@@ -454,7 +457,7 @@ defmodule AshSupabase.DataLayer do
 
   @impl true
   def destroy(resource, changeset) do
-    with {:ok, query} <- record_query(resource, changeset.data),
+    with {:ok, query} <- record_query(resource, changeset.data, changeset),
          {:ok, query} <- apply_changeset_filter(query, changeset, resource) do
       case PostgREST.delete(
              Info.client(resource),
@@ -496,16 +499,37 @@ defmodule AshSupabase.DataLayer do
 
   # -- helpers --------------------------------------------------------------
 
-  defp base_write_query(resource) do
+  defp base_write_query(resource, changeset) do
     resource
     |> Info.table()
     |> Query.new()
-    |> Query.schema(Info.schema(resource))
+    |> Query.schema(write_schema(resource, changeset))
     |> Query.add_headers(Info.headers(resource))
     |> Query.returning(true)
   end
 
-  defp record_query(resource, record) do
+  # `set_tenant/3` only covers reads, because a write carries its tenant on the
+  # changeset rather than on a query. Missing it would write to the default
+  # schema instead of the tenant's — a cross-tenant leak, not an error.
+  defp write_schema(resource, changeset) do
+    with :context <- Ash.Resource.Info.multitenancy_strategy(resource),
+         tenant when not is_nil(tenant) <- changeset_tenant(changeset, resource) do
+      tenant
+    else
+      _ -> Info.schema(resource)
+    end
+  end
+
+  defp changeset_tenant(nil, _resource), do: nil
+
+  defp changeset_tenant(changeset, resource) do
+    case Map.get(changeset, :to_tenant) || Map.get(changeset, :tenant) do
+      nil -> nil
+      tenant -> tenant |> Ash.ToTenant.to_tenant(resource) |> to_string()
+    end
+  end
+
+  defp record_query(resource, record, changeset) do
     case Ash.Resource.Info.primary_key(resource) do
       [] ->
         {:error,
@@ -521,7 +545,8 @@ defmodule AshSupabase.DataLayer do
          )}
 
       keys ->
-        Enum.reduce_while(keys, {:ok, base_write_query(resource)}, fn key, {:ok, query} ->
+        Enum.reduce_while(keys, {:ok, base_write_query(resource, changeset)}, fn key,
+                                                                                 {:ok, query} ->
           add_key_filter(query, resource, record, key)
         end)
     end

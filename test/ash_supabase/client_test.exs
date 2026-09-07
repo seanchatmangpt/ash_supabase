@@ -94,6 +94,42 @@ defmodule AshSupabase.ClientTest do
     end
   end
 
+  describe "header precedence" do
+    test "a configured header cannot override the request's own authorization" do
+      capture = expect_request(&Req.Test.json(&1, %{}))
+
+      client = [
+        url: "https://test.supabase.co",
+        api_key: "anon",
+        headers: [{"authorization", "Bearer stale-from-config"}, {"x-app", "mine"}],
+        req_options: [plug: {Req.Test, AshSupabase.Test.Client}]
+      ]
+
+      Client.request(client, :get, "/rest/v1/posts", token: "user-jwt")
+
+      conn = capture.()
+      assert header(conn, "authorization") == "Bearer user-jwt"
+      assert header(conn, "apikey") == "anon"
+      # Headers that are not part of authentication still come through.
+      assert header(conn, "x-app") == "mine"
+    end
+
+    test "a per-request header still overrides a configured one" do
+      capture = expect_request(&Req.Test.json(&1, %{}))
+
+      client = [
+        url: "https://test.supabase.co",
+        api_key: "anon",
+        headers: [{"x-app", "from-config"}],
+        req_options: [plug: {Req.Test, AshSupabase.Test.Client}]
+      ]
+
+      Client.request(client, :get, "/x", headers: [{"x-app", "from-request"}])
+
+      assert header(capture.(), "x-app") == "from-request"
+    end
+  end
+
   describe "urls" do
     test "joins a relative path onto the project url" do
       capture = expect_request(&Req.Test.json(&1, %{}))
